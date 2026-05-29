@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Administração - Guetto Pants</title>
+    <link href="https://fonts.googleapis.com/css2?family=Permanent+Marker&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: linear-gradient(180deg, #1f0303 0%, #000000 40%, #031403 100%); background-attachment: fixed; color: #ffffff; font-family: 'Roboto', sans-serif; min-height: 100vh; padding: 40px 20px; }
+        .container { width: 100%; max-width: 900px; margin: 0 auto; }
+        h1 { font-family: 'Permanent Marker', cursive; color: #e5a93c; text-align: center; margin-bottom: 30px; }
+        .alert-message { padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: 500; text-align: center; display: none; line-height: 1.5; background-color: rgba(255, 51, 51, 0.15); border: 1px solid #ff3333; color: #ff9999; }
+        .login-box, .form-panel, .stock-section { background-color: rgba(17, 17, 17, 0.95); border: 2px solid #333; border-radius: 12px; padding: 30px; margin-bottom: 20px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7); }
+        .form-panel, .stock-section { display: none; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; margin-bottom: 8px; color: #ccc; text-transform: uppercase; font-size: 0.8rem; }
+        .input-field { width: 100%; padding: 12px; background-color: #1a1a1a; border: 1px solid #444; color: white; border-radius: 8px; }
+        .btn { width: 100%; padding: 14px; font-family: 'Permanent Marker', cursive; border: none; border-radius: 8px; cursor: pointer; text-transform: uppercase; background-color: #e5a93c; color: black; font-size: 1.2rem; }
+        .loader { display: none; width: 20px; height: 20px; border: 3px solid rgba(0,0,0,.3); border-radius: 50%; border-top-color: #000; animation: spin 1s linear infinite; margin-right: 10px; vertical-align: middle; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Guetto Pants - Controlo de Stock</h1>
+        <div id="alert-box" class="alert-message"></div>
+
+        <div id="login-block" class="login-box">
+            <div class="form-group"><label>Email</label><input type="email" id="email-field" class="input-field"></div>
+            <div class="form-group"><label>Password</label><input type="password" id="pass-field" class="input-field"></div>
+            <button id="btn-login" class="btn">Aceder ao Painel</button>
+        </div>
+
+        <section id="form-block" class="form-panel">
+            <form id="prod-form">
+                <div class="form-group"><label>Nome</label><input type="text" id="p-name" class="input-field" required></div>
+                <div class="form-group"><label>Preço</label><input type="text" id="p-price" class="input-field" required></div>
+                <div class="form-group"><label>Detalhes</label><input type="text" id="p-detail" class="input-field" required></div>
+                <div class="form-group"><label>Fotografia</label><input type="file" id="p-image-file" class="input-field" accept="image/*" required></div>
+                <button type="submit" class="btn" id="btn-submit"><span class="loader" id="submit-loader"></span>Guardar Produto</button>
+            </form>
+        </section>
+
+        <section id="stock-block" class="stock-section">
+            <table style="width:100%; border-collapse: collapse;">
+                <thead><tr><th>Artigo</th><th>Acções</th></tr></thead>
+                <tbody id="stock-table-body"></tbody>
+            </table>
+        </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="config.js"></script>
+    <script>
+        // SUPABASE_URL and SUPABASE_ANON_KEY are now loaded from config.js
+        
+        const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        // Nome do bucket corrigido para o que criou no Supabase
+        const BUCKET_NAME = "PUBLICO";
+
+        const alertBox = document.getElementById('alert-box');
+        
+        document.getElementById('btn-login').addEventListener('click', async () => {
+            const { error } = await supabaseClient.auth.signInWithPassword({
+                email: document.getElementById('email-field').value,
+                password: document.getElementById('pass-field').value
+            });
+            if (error) return alert(error.message);
+            document.getElementById('login-block').style.display = 'none';
+            document.getElementById('form-block').style.display = 'block';
+            document.getElementById('stock-block').style.display = 'block';
+        });
+
+        document.getElementById('prod-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = document.getElementById('p-image-file').files[0];
+            const btn = document.getElementById('btn-submit');
+            const loader = document.getElementById('submit-loader');
+            
+            btn.disabled = true;
+            loader.style.display = 'inline-block';
+            alertBox.style.display = 'none';
+
+            try {
+                const fileName = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+                
+                // Usando a variável BUCKET_NAME agora correta
+                const { error: uploadError } = await supabaseClient.storage.from(BUCKET_NAME).upload(fileName, file);
+                
+                if (uploadError) throw uploadError;
+
+                const { data: { publicUrl } } = supabaseClient.storage.from(BUCKET_NAME).getPublicUrl(fileName);
+                
+                const { error: dbError } = await supabaseClient.from('produtos').insert([{
+                    nome: document.getElementById('p-name').value,
+                    preco: document.getElementById('p-price').value,
+                    detalhe: document.getElementById('p-detail').value,
+                    imagem: publicUrl,
+                    disponivel: true
+                }]);
+
+                if (dbError) throw dbError;
+                alert("Sucesso!");
+                location.reload();
+
+            } catch (err) {
+                console.error(err);
+                alert("Erro: " + (err.message || err));
+            } finally {
+                btn.disabled = false;
+                loader.style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
