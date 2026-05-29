@@ -1,5 +1,5 @@
 # Credentials
-config.js
+# config.js - Supabase anon key is public-safe
 .env
 
 # OS files
